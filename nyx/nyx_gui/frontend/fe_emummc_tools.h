@@ -20,6 +20,8 @@
 
 #include "gui.h"
 
+#define EMUMMC_RAW_FAST_MODE 1
+
 typedef struct _emummc_cfg_t
 {
 	int  enabled;

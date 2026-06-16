@@ -36,6 +36,7 @@ typedef struct _mbr_ctxt_t
 } mbr_ctxt_t;
 
 static bool emummc_backup;
+static bool emummc_fast_mode;
 static mbr_ctxt_t mbr_ctx;
 static lv_obj_t *emummc_manage_window;
 static lv_res_t (*emummc_tools)(lv_obj_t *btn);
@@ -134,7 +135,12 @@ static void _create_window_emummc()
 	if (!mbr_ctx.part_idx)
 		dump_emummc_file(&emmc_tool_gui_ctxt);
 	else
-		dump_emummc_raw(&emmc_tool_gui_ctxt, mbr_ctx.part_idx, mbr_ctx.sector_start, mbr_ctx.resized_cnt[mbr_ctx.part_idx - 1]);
+	{
+		u32 resized = mbr_ctx.resized_cnt[mbr_ctx.part_idx - 1];
+		if (!resized && emummc_fast_mode)
+			resized = EMUMMC_RAW_FAST_MODE;
+		dump_emummc_raw(&emmc_tool_gui_ctxt, mbr_ctx.part_idx, mbr_ctx.sector_start, resized);
+	}
 
 	nyx_window_toggle_buttons(win, false);
 }
@@ -154,6 +160,63 @@ static lv_res_t _create_emummc_raw_format(lv_obj_t * btns, const char * txt)
 	mbr_ctx.sector_start = 0;
 
 	return LV_RES_INV;
+}
+
+static void _create_mbox_emummc_raw_fast();
+
+static lv_res_t _create_emummc_raw_fast_action(lv_obj_t *btns, const char *txt)
+{
+	int btn_idx = lv_btnm_get_pressed(btns);
+	lv_obj_t *bg = lv_obj_get_parent(lv_obj_get_parent(btns));
+
+	switch (btn_idx)
+	{
+	case 0: // Default.
+		emummc_fast_mode = false;
+		break;
+	case 1: // Fast Mode.
+		emummc_fast_mode = true;
+		break;
+	case 2: // Cancel.
+	default:
+		mbr_ctx.part_idx = 0;
+		mbr_ctx.sector_start = 0;
+		nyx_mbox_action(btns, txt);
+		return LV_RES_INV;
+	}
+
+	lv_obj_set_style(bg, &lv_style_transp);
+	_create_window_emummc();
+
+	mbr_ctx.part_idx = 0;
+	mbr_ctx.sector_start = 0;
+
+	nyx_mbox_action(btns, txt);
+
+	return LV_RES_INV;
+}
+
+static void _create_mbox_emummc_raw_fast()
+{
+	lv_obj_t *dark_bg = lv_obj_create(lv_scr_act(), NULL);
+	lv_obj_set_style(dark_bg, &mbox_darken);
+	lv_obj_set_size(dark_bg, LV_HOR_RES, LV_VER_RES);
+
+	static const char *mbox_btn_map[] = { "\222Default", "\222Fast Mode", "\222Cancel", "" };
+	lv_obj_t *mbox = lv_mbox_create(dark_bg, NULL);
+	lv_mbox_set_recolor_text(mbox, true);
+	lv_obj_set_width(mbox, LV_HOR_RES / 9 * 6);
+
+	lv_mbox_set_text(mbox,
+		"#FF8000 Choose emuMMC creation mode:#\n\n"
+		"#C7EA46 Default:#\nFull copy of all partitions.\n\n"
+		"#C7EA46 Fast Mode (formatted):#\nCopies system partitions only.\n"
+		"USER partition left empty for formatting.");
+
+	lv_mbox_add_btns(mbox, mbox_btn_map, _create_emummc_raw_fast_action);
+
+	lv_obj_align(mbox, NULL, LV_ALIGN_CENTER, 0, 0);
+	lv_obj_set_top(mbox, true);
 }
 
 static lv_res_t _create_emummc_raw_action(lv_obj_t * btns, const char * txt)
@@ -183,6 +246,16 @@ static lv_res_t _create_emummc_raw_action(lv_obj_t * btns, const char * txt)
 
 	if (btn_idx < 3)
 	{
+		if (mbr_ctx.resized_cnt[mbr_ctx.part_idx - 1] == 0)
+		{
+			// Full-size partition: show fast mode selection.
+			nyx_mbox_action(btns, txt);
+			_create_mbox_emummc_raw_fast();
+			return LV_RES_INV;
+		}
+
+		// Resized partition: proceed directly.
+		emummc_fast_mode = false;
 		lv_obj_set_style(bg, &lv_style_transp);
 		_create_window_emummc();
 	}
