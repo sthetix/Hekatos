@@ -29,6 +29,12 @@ OBJS = $(addprefix $(BUILDDIR)/, \
 CUSTOMDEFINES := -DBL_MAGIC=$(IPL_MAGIC)
 CUSTOMDEFINES += -DBL_VER_MJ=$(BLVERSION_MAJOR) -DBL_VER_MN=$(BLVERSION_MINOR) -DBL_VER_HF=$(BLVERSION_HOTFX) -DBL_VER_RL=$(BLVERSION_REL)
 
+ifeq ($(DRAM_8GB),1)
+CUSTOMDEFINES += -DCONFIG_DRAM_8GB=1
+else
+CUSTOMDEFINES += -DCONFIG_DRAM_8GB=0
+endif
+
 #TODO: Considering reinstating some of these when pointer warnings have been fixed.
 WARNINGS := -Wall -Wsign-compare -Wno-array-bounds -Wno-stringop-overflow
 

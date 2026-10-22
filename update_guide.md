@@ -1,68 +1,48 @@
 # Update Guide for Hekatos
 
-This guide explains how to update Hekatos when new versions of the original hekate are released.
+## Scope
 
-## Overview
+Hekatos follows original hekate by CTCaer. The intended functional additions are:
 
-Hekatos is an unofficial fork based on the original hekate by CTCaer with:
-- **OFW instant boot functionality** - Bypasses all hekate processing for fastest stock firmware boot
-- **Lockpick_RCM_Pro integration** - Uses Lockpick_RCM_Pro instead of Lockpick_RCM
-- **Hekatos branding** - Distinguishes it from the official hekate project
-- **Dual 4GB/8GB RAM support** - Automated release builds for both Switch variants
-- **Warmboot Extractor** - Extracts and saves warmboot binaries for Atmosphere on Mariko
+1. The `ofw=1` launch option.
+2. Separate 4GB and 8GB release packages, including activation of the existing upstream forced-8GB configuration.
 
-Hekatos is not official hekate and must not be presented as official hekate. Keep upstream credits intact and ask users to reproduce bugs on official hekate before reporting upstream.
+Keep upstream structure, boot behavior, SDRAM tables, Minerva, Nyx, and modules unless a specific change is approved. Hekatos naming and release artwork are presentation customizations, not additional boot features. Preserve original hekate credits and identify Hekatos as an unofficial fork.
 
----
+This guide describes the intended update scope. It does not mean every existing source difference has already been reverted.
 
-## Recommended: Automated Update Script
+## Before Updating
 
-Run the update script to automatically apply all patches:
+- Compare the new upstream source with the current Hekatos source.
+- Preserve the OFW handler and 4GB/8GB release wiring described below.
+- Keep upstream firmware support and bundled binary assets aligned with the same official release.
+- Do not carry additional feature patches forward automatically. Existing warmboot extractor code, custom `pkg1_id_t.fuses` fields, and silent BIS keygen changes are outside the intended scope; any source cleanup requires separate approval.
+- Do not build, test, package, commit, or push without explicit user authorization.
 
-```bash
-python update_hekate.py <path-to-new-hekate>
-```
+## Update Script Status
 
-This script:
-1. Copies new hekate files (bootloader/, bdk/, nyx/, etc.)
-2. Applies OFW patch to `bootloader/hos/hos_config.c` (single handler + `ofw` table entry)
-3. Patches Hekatos branding (version, tagline, button label)
-4. Patches Lockpick_RCM_Pro references
-5. Adds `fuses` field to nyx pkg1_ids table
-6. Verify bundled binary sys assets against the matching official hekate release
+Do not assume `update_hekate.py` implements this guide.
 
-After running the script, verify manually when you are ready:
-```bash
-rtk make release
-```
+The current script copies upstream folders and applies OFW, branding, Lockpick_RCM_Pro, and warmboot-related patches. It does not reapply the complete 8GB flag wiring. Its extra patches do not match the intended functional scope above.
 
----
+Review and obtain approval for script changes before using it as the update workflow. Updating this guide does not modify the script.
 
-## Manual Update (Alternative)
+## Required Functional Changes
 
-If the script fails or you prefer manual control, follow the steps below.
+| File | Change to preserve |
+|---|---|
+| `bootloader/hos/hos_config.c` | `_config_ofw()` handler and `ofw` config entry |
+| `res/hekate_ipl_template.ini` | OFW launch entry |
+| `Makefile` | 4GB/8GB build option, output names, and release targets |
+| `loader/Makefile` | Translate `DRAM_8GB` into `CONFIG_DRAM_8GB` |
+| `bootloader/main.c` | Initialize the reserved DRAM flag for the selected variant |
+| `loader/loader.c` | Initialize the same flag in the compressed payload loader |
 
-### Files Modified
+### OFW Launch Option
 
-| # | File | Purpose |
-|---|------|---------|
-| 1 | `bootloader/hos/hos_config.c` | OFW handler (1 function + `ofw` table entry) |
-| 2 | `nyx/nyx_gui/frontend/gui.c` | Branding (version tag + tagline) |
-| 3 | `nyx/nyx_gui/frontend/gui_info.c` | Lockpick_RCM_Pro |
-| 4 | `nyx/nyx_gui/hos/pkg1.h` | Add `fuses` field to pkg1_id_t |
-| 5 | `nyx/nyx_gui/hos/pkg1.c` | Add `fuses` values to pkg1_ids table |
-| 6 | `nyx/Makefile` | Add warmboot_tools and gui_warmboot objects |
-| 7 | `res/hekate_ipl_template.ini` | OFW boot entry |
-| 8 | `res/patches_template.ini` | Lockpick_RCM_Pro entry |
-| 9 | `bootloader/gfx/logos.c` | Built-in Hekatos boot logo |
+Source: [SaudiCraft's comment in hekate issue #1227](https://github.com/CTCaer/hekate/issues/1227#issuecomment-4169407061). Hekatos uses the same handler logic, with the config key shortened from `reboot_ofw=1` to `ofw=1` and the handler named `_config_ofw`. This is an adaptation of that proposal, not a new OFW boot implementation.
 
-**IMPORTANT: Credits are NOT a file modification - always use original hekate credits!**
-
----
-
-### 1. `bootloader/hos/hos_config.c` - OFW Feature
-
-Add the handler function before `_config_ucid`:
+In `bootloader/hos/hos_config.c`, preserve this handler:
 
 ```c
 static int _config_ofw(launch_ctxt_t *ctxt, const char *value)
@@ -77,228 +57,60 @@ static int _config_ofw(launch_ctxt_t *ctxt, const char *value)
 }
 ```
 
-Register it in `_config_handlers[]` before `{ NULL, NULL }`.
-
-This is the same logic as SaudiCraft's GitHub comment: set `REBOOT_BYPASS_FUSES` and halt. Hekatos intentionally keeps the shorter config key `ofw` instead of the comment's `reboot_ofw` name:
+Register it in `_config_handlers[]` before the terminating entry:
 
 ```c
 	{ "ofw",              _config_ofw },
 	{ NULL, NULL },
 ```
 
-No functional changes to `bootloader/main.c` are needed for OFW. Only keep the Hekatos TUI title/version string current, for example:
+Preserve the template entry in `res/hekate_ipl_template.ini`:
 
-```c
-menu_t menu_top = { ment_top, "Hekatos v6.5.3", 0, 0 };
-```
-
-### 2. `nyx/nyx_gui/frontend/gui.c` - Branding
-
-**Tagline** (change):
-```c
-// From:
-"THE ALL IN ONE BOOTLOADER FOR ALL YOUR NEEDS"
-// To:
-"THE UNOFFICIAL HEKATE FORK FOR ALL YOUR NEEDS"
-```
-
-**Button label** (change):
-```c
-// From:
-" hekate#"
-// To:
-" Hekatos#"
-```
-
-**Version tag** (change):
-```c
-// From:
-"hekate %s%d.%d.%d%c"
-// To:
-"Hekatos %s%d.%d.%d%c"
-```
-
-### 3. `nyx/nyx_gui/frontend/gui_info.c` - Lockpick_RCM_Pro
-
-Replace all occurrences:
-```c
-// From:
-"Lockpick_RCM.bin"
-"bootloader/payloads/Lockpick_RCM.bin"
-
-// To:
-"Lockpick_RCM_Pro.bin"
-"bootloader/payloads/Lockpick_RCM_Pro.bin"
-```
-
-Also update the error message:
-```
-bootloader/payloads/Lockpick_RCM.bin is missing
--> bootloader/payloads/Lockpick_RCM_Pro.bin is missing
-```
-
-### 4. `nyx/nyx_gui/hos/pkg1.h` - Add fuses field
-
-Add `fuses` field to `pkg1_id_t` struct (after `mkey`):
-```c
-typedef struct _pkg1_id_t
-{
-	const char *id;
-	u16 mkey;
-	u16 fuses;  // ADD THIS LINE
-	u16 tsec_off;
-	u32 pkg11_off;
-	u32 secmon_base;
-	u32 warmboot_base;
-} pkg1_id_t;
-```
-
-### 5. `nyx/nyx_gui/hos/pkg1.c` - Add fuses values
-
-Update the `_pkg1_ids[]` table to include the `fuses` column:
-
-```c
-// Update header comment:
- // Timestamp  MK   FU  TSEC    PK11     SECMON     Warmboot
-
-// Add fuses value (2nd number) to each entry:
-{ "20161121",  0,  1, 0x1900, 0x3FE0, 0x40014020, 0x8000D000 }, // 1.0.0.
-{ "20170210",  0,  2, 0x1900, 0x3FE0, 0x4002D000, 0x8000D000 }, // 2.0.0 - 2.3.0.
-... (add fuses value for all entries)
-{ "20260123", 21, 23, 0x0E00, 0x6FE0, 0x40030000, 0x4003E000 }, // 22.0.0+
-```
-
-### 6. `nyx/Makefile` - Add warmboot tools
-
-Add to the OBJS line:
-```makefile
-# Main and graphics.
-OBJS =  start exception_handlers nyx heap gfx \
-		gui gui_info gui_tools gui_options gui_emmc_tools gui_emummc_tools gui_tools_partition_manager gui_warmboot \
-		fe_emummc_tools fe_emmc_tools \
-		warmboot_tools
-```
-
-### 7. `res/hekate_ipl_template.ini` - OFW Entry
-
-Add after the [Stock] section:
 ```ini
 [100% Stock OFW]
 ofw=1
-
-# This is a true 100% stock firmware boot.
-# It bypasses ALL hekate boot processing for the fastest possible stock boot.
-# Perfect for online play or when you need completely clean stock firmware.
-# Boot time: ~2-3 seconds.
-# Note: This only works on units without AutoRCM enabled or Mariko units.
 ```
 
-### 8. `res/patches_template.ini` - Lockpick_RCM_Pro
+This invokes the existing upstream reboot mechanism. Do not change other launch handlers or the CFW boot path as part of this addition.
 
-Update the Lockpick entry:
-```ini
-[Lockpick_RCM_Pro]
-payload=Lockpick_RCM_Pro.bin
+### 4GB/8GB Release Wiring
+
+Both the root `Makefile` and `loader/Makefile` must define:
+
+```makefile
+ifeq ($(DRAM_8GB),1)
+CUSTOMDEFINES += -DCONFIG_DRAM_8GB=1
+else
+CUSTOMDEFINES += -DCONFIG_DRAM_8GB=0
+endif
 ```
 
----
-
-### 9. `bootloader/gfx/logos.c` - Built-in Hekatos boot logo
-
-Hekatos uses a custom built-in boot logo in `bootloader/gfx/logos.c`.
-
-Source artwork:
-```text
-bootlogo/bootlogo.bmp
-```
-
-Expected source format:
-```text
-68 x 192, 8bpp paletted grayscale BMP
-```
-
-Conversion rules:
-- Convert the BMP to a raw grayscale `u8 bootlogo[]` C array.
-- Preserve `BOOTLOGO_WIDTH 68`, `BOOTLOGO_HEIGHT 192`, and `BOOTLOGO_SIZE 13056`.
-- BMP rows are bottom-up unless the BMP height is negative.
-- Convert each pixel through the BMP palette, using `(R + G + B) / 3` as the grayscale byte.
-- Keep `render_static_bootlogo()` using:
+In both `bootloader/main.c` and `loader/loader.c`, preserve this initializer in `ipl_ver`:
 
 ```c
-memcpy(logo_buf, bootlogo, BOOTLOGO_SIZE);
+#if CONFIG_DRAM_8GB
+	.rcfg.rsvd_flags   = RSVD_FLAG_DRAM_8GB,
+#else
+	.rcfg.rsvd_flags   = 0,
+#endif
 ```
 
-Do not restore the old built-in `bootlogo_blz[]` path unless intentionally reverting to compressed built-in artwork. `battery_icons_blz[]` still uses BLZ and should be left untouched.
+The loader copies its reserved configuration into the decompressed payload before booting it. Setting only the bootloader flag is insufficient: a zero flag from the loader overwrites it. An `_8gb` filename or an unused compiler define does not activate 8GB mode.
 
-Reference conversion command:
+Preserve the existing upstream behavior:
 
-```powershell
-@'
-from pathlib import Path
-import struct
+- `ipl_main()` checks `RSVD_FLAG_DRAM_8GB` and calls `fuse_force_8gb_dramid()` before `hw_init()`.
+- The payload passes its reserved flags to Nyx, which applies the same override.
+- The 4GB build leaves the flag zero and uses normal fuse-based configuration.
+- No separate custom SDRAM tables or Minerva/module patches are required for this wiring.
 
-root = Path(r'd:\Coding\Hekatos')
-bmp_path = root / 'bootlogo' / 'bootlogo.bmp'
-logos_path = root / 'bootloader' / 'gfx' / 'logos.c'
+Regression confirmed on 2026-10-22: both flags previously remained zero even in the 8GB package. Upgraded hardware retaining a 4GB fuse ID therefore did not activate forced 8GB configuration. After fixing the loader and bootloader wiring, the user reported that the affected tester confirmed it works. This feedback covers that device, not every RAM model.
 
-data = bmp_path.read_bytes()
-if data[:2] != b'BM':
-    raise SystemExit('not a BMP file')
-pixel_offset = struct.unpack_from('<I', data, 10)[0]
-dib_size = struct.unpack_from('<I', data, 14)[0]
-width, height_signed, planes, bpp, compression, image_size, xppm, yppm, clr_used, clr_important = struct.unpack_from('<iiHHIIiiII', data, 18)
-if width != 68 or abs(height_signed) != 192 or bpp != 8 or compression != 0:
-    raise SystemExit(f'unsupported BMP: {width}x{height_signed}, {bpp}bpp, compression {compression}')
+## Release Packaging and Official Assets
 
-height = abs(height_signed)
-palette_entries = clr_used or 256
-palette_start = 14 + dib_size
-palette = data[palette_start:palette_start + palette_entries * 4]
-row_stride = ((width * bpp + 31) // 32) * 4
-raw = data[pixel_offset:pixel_offset + row_stride * height]
+Preserve the existing `release-4gb`, `release-8gb`, and `release` targets. Each variant's release target performs a clean build. Each package must contain the matching variant as both `payload.bin` and `bootloader/update.bin`, together with its required bootloader files.
 
-values = []
-for y in range(height):
-    src_y = y if height_signed < 0 else height - 1 - y
-    row = raw[src_y * row_stride:src_y * row_stride + width]
-    for idx in row:
-        b, g, r, _ = palette[idx * 4:idx * 4 + 4]
-        values.append((int(r) + int(g) + int(b)) // 3)
-
-lines = []
-for i in range(0, len(values), 16):
-    chunk = values[i:i + 16]
-    lines.append('\t' + ', '.join(f'0x{x:02X}' for x in chunk) + ',')
-
-text = logos_path.read_text(encoding='utf-8')
-start = text.index('u8 bootlogo[] = {')
-body_start = text.index('\n', start) + 1
-end = text.index('\n};', body_start)
-logos_path.write_text(text[:body_start] + '\n'.join(lines) + text[end:], encoding='utf-8', newline='')
-print(f'Converted {bmp_path.name}: {width}x{height}, {len(values)} bytes')
-'@ | python -
-```
-
-After conversion, verify the array length:
-
-```powershell
-@'
-from pathlib import Path
-import re
-text = Path('bootloader/gfx/logos.c').read_text()
-body = re.search(r'u8 bootlogo\[\] = \{(.*?)\n\};', text, re.S).group(1)
-print(len(re.findall(r'0x[0-9A-Fa-f]{2}', body)))
-'@ | python -
-```
-
-Expected output:
-```text
-13056
-```
-
-### 10. `extras/sys/` - Official binary sys assets
-
-Update bundled binary assets from the matching official hekate release package, especially:
+Keep bundled assets aligned with the matching official hekate release, especially:
 
 ```text
 extras/sys/emummc.kipm
@@ -307,113 +119,34 @@ extras/sys/thk.bin
 extras/sys/l4t/*.bin
 ```
 
-`emummc.kipm` is firmware-sensitive. Hekate injects it into FS only when emuMMC is enabled, so sysMMC CFW can work while emuMMC black screens if this file is stale. When upstream release notes mention new HOS or emuMMC support, replace `extras/sys/emummc.kipm` with the copy from the same official release before packaging.
+Stale `emummc.kipm` can cause emuMMC to black screen on newer HOS even while sysMMC CFW works. Compare the bundled and packaged copies with the matching official release.
 
-Suggested hash check:
+Also compare `extras/sys/l4t/sc7exit_b01.bin` byte-for-byte with the current official release ZIP, including both packaged variants. In [issue #1296](https://github.com/CTCaer/hekate/issues/1296), an incorrect 22.5.0 SAFE binary caused Mariko sleep failures; upstream corrected the ZIP without requiring a source change. File size and fuse header alone cannot identify the corrected binary. On 2026-10-22, the official 6.5.4 copy had SHA256 `2d8629e4e8fe8e7973b1cf5f0d0fa2e3614ede96a3e939f5508e5d807d8c7786`. Use the matching official release as the reference for future versions.
 
-```powershell
-$official = "path\to\official\bootloader\sys\emummc.kipm"
-Get-FileHash $official -Algorithm SHA256
-Get-FileHash extras\sys\emummc.kipm -Algorithm SHA256
-```
+## Verification After an Update
 
-After `rtk make release`, verify the release folders and zips contain the same hash:
+Read-only source review:
 
-```powershell
-Get-FileHash release\Hekatos-<version>-4GB\bootloader\sys\emummc.kipm -Algorithm SHA256
-Get-FileHash release\Hekatos-<version>-8GB\bootloader\sys\emummc.kipm -Algorithm SHA256
-```
+- Confirm the OFW handler and table entry remain present.
+- Confirm both Makefiles define the selected DRAM mode.
+- Confirm both bootloader and loader initialize the reserved flag conditionally.
+- Confirm the flag still reaches RAM initialization and Nyx.
+- Confirm package names and contents match their selected variant.
+- Review every other upstream difference instead of assuming it is required.
 
----
-
-## Build Commands
-
-Suggested verification commands. In this repo, do not run these unless the user explicitly approves builds/tests.
+Run release commands only when explicitly authorized:
 
 ```bash
-# Clean build
-rtk make clean
-
-# Build 4GB variant (default)
-rtk make
-
-# Build 8GB variant
-rtk make DRAM_8GB=1
-
-# Build both variants
-rtk make all-both
-
-# Create release packages (both 4GB and 8GB zips)
-rtk make release
-```
-
----
-
-## Key Differences from Original hekate
-
-1. **OFW Boot** - `ofw=1` in a Launch ini entry immediately triggers `REBOOT_BYPASS_FUSES` via `_config_ofw` in `hos_config.c`, using the same logic as SaudiCraft's post while keeping Hekatos' shorter key name
-2. **Branding** - "Hekatos" instead of "hekate" in GUI
-3. **Tagline** - "THE UNOFFICIAL HEKATE FORK FOR ALL YOUR NEEDS"
-4. **Lockpick** - Uses "Lockpick_RCM_Pro.bin" instead of "Lockpick_RCM.bin"
-5. **DRAM Support** - `CONFIG_DRAM_8GB` flag for 8GB RAM Switch models
-
----
-
-## Troubleshooting
-
-**Build fails with "memory_map.h: No such file or directory":**
-- Verify `BDKINC := -I../$(BDKDIR)` in loader/Makefile
-- Ensure bdk/memory_map.h exists
-
-**Make release fails with zip error:**
-- Verify the zip command changes to the correct directory
-- Use `cd release/Hekatos-$(VERSION)-XGB && zip -r ../Hekatos-$(VERSION)-XGB.zip .`
-
-**OFW not working:**
-- Verify `_config_ofw` handler exists in `bootloader/hos/hos_config.c`
-- Verify `{ "ofw", _config_ofw }` is in `_config_handlers[]`
-- Check that `REBOOT_BYPASS_FUSES` is defined in bdk/power/max7762x.h or similar
-- If upstream renamed `_config_ucid`, update the anchor in `update_hekate.py`
-
-**Version shows "hekate" instead of "Hekatos":**
-- Check bootloader/main.c menu title
-- Check nyx/nyx_gui/frontend/gui.c version string
-
-**sysMMC CFW works but emuMMC black screens on a new HOS version:**
-- First verify `bootloader/sys/emummc.kipm` on SD matches the official hekate release that supports that HOS version
-- Verify `extras/sys/emummc.kipm` and release package copies have the same hash
-- Source may already contain the new FS IDs while the bundled `emummc.kipm` is still stale
-
----
-
-## Example Update Session (Manual)
-
-```bash
-# 1. Backup current version
-cp -r Hekatos Hekatos-backup
-
-# 2. Copy files from upstream hekate
-robocopy d:\Coding\hekate d:\Coding\Hekatos /E /XD .git .github .vscode release /XF .gitignore
-
-# 3. Apply modifications (see Files Modified section above)
-
-# 4. Build and test when approved/ready
-cd d:\Coding\Hekatos
-rtk make clean
+# Clean build and package both variants
 rtk make release
 
-# 5. Verify outputs
-rtk ls -lh release/
+# Or clean build and package one variant
+rtk make release-4gb
+rtk make release-8gb
 ```
 
----
+For device verification of the 8GB fix, use the 8GB package on the corresponding RAM-upgraded hardware. Replace the payload actually used to boot, `bootloader/update.bin`, and the accompanying package files, then fully power off and boot again.
 
-## Notes for Future Updates
+Where the raw fuse ID differs from the forced ID, Console Info should show `Forced DRAM Config 8GB`. This confirms selection of the forced configuration; device stability still requires hardware verification.
 
-1. **Always run `update_hekate.py`** first - it handles most patches automatically
-2. **Manual patches** may still be needed if upstream code structure changes significantly
-3. **Version format** - Nyx version (e.g., 1.9.0) is separate from hekate version (e.g., 6.5.0)
-4. **DRAM configuration** - The 8GB flag only affects hekate payload, not nyx or modules
-5. **Lockpick updates** - Check if Lockpick_RCM_Pro is still the correct filename on updates
-6. **Do not keep debug key dumps** - Silent BIS keygen must not write BIS keys or other console-unique secrets to SD in release builds
-7. **Binary sys assets matter** - Keep `extras/sys/emummc.kipm` aligned with the official hekate release; stale copies can break only emuMMC on newer firmware
+Do not run builds or tests merely because these commands appear in this guide.

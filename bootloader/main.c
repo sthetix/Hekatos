@@ -40,7 +40,11 @@ boot_cfg_t __attribute__((section ("._boot_cfg"))) b_cfg;
 const volatile ipl_ver_meta_t __attribute__((section ("._ipl_version"))) ipl_ver = {
 	.magic             = BL_MAGIC,
 	.version           = (BL_VER_MJ + '0') | ((BL_VER_MN + '0') << 8) | ((BL_VER_HF + '0') << 16) | ((BL_VER_RL) << 24),
+#if CONFIG_DRAM_8GB
+	.rcfg.rsvd_flags   = RSVD_FLAG_DRAM_8GB,
+#else
 	.rcfg.rsvd_flags   = 0,
+#endif
 	.rcfg.bclk_t210    = BPMP_CLK_LOWER_BOOST,
 	.rcfg.bclk_t210b01 = BPMP_CLK_DEFAULT_BOOST
 };
