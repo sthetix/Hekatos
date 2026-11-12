@@ -1430,7 +1430,7 @@ ment_t ment_top[] = {
 	MDEF_END()
 };
 
-menu_t menu_top = { ment_top, "Hekatos v6.5.4", 0, 0 };
+menu_t menu_top = { ment_top, "Hekatos v6.5.5", 0, 0 };
 
 extern void pivot_stack(u32 stack_top);
 
